@@ -2,9 +2,10 @@
 # Ally DSP installer: downloads the latest release, verifies checksum and
 # signature, installs into ~/homebrew/plugins/Ally DSP.
 #   curl -sL https://github.com/bassobr/decky-ally-dsp/raw/main/install.sh -o /tmp/ally-dsp-install.sh && sudo bash /tmp/ally-dsp-install.sh
+# Set ALLY_DSP_REPO=owner/repo to install the latest release of a fork.
 set -euo pipefail
 PLUGIN_NAME="Ally DSP"
-REPO="bassobr/decky-ally-dsp"
+REPO="${ALLY_DSP_REPO:-bassobr/decky-ally-dsp}"
 if [ "$(id -u)" -ne 0 ]; then
   echo "Please run with sudo: sudo bash $0" >&2; exit 1
 fi
