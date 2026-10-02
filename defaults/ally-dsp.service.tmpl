@@ -1,7 +1,7 @@
 # Ally DSP filter chain in its own PipeWire process. Installed to
 # ~/.config/systemd/user/ally-dsp.service with paths filled in by the plugin.
 [Unit]
-Description=Ally DSP speaker filter chain (Dolby tuning for the ROG Xbox Ally X)
+Description=Ally DSP speaker filter chain (Dolby tuning for ASUS ROG Ally handhelds)
 After=pipewire.service wireplumber.service
 BindsTo=pipewire.service
 ConditionPathExists={conf_path}
