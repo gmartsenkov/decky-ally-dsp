@@ -6,12 +6,6 @@ GITHUB_REPO = "bassobr/decky-ally-dsp"
 RELEASE_ZIP_TEMPLATE = "ally-dsp-{version}.zip"
 USER_AGENT = "ally-dsp/decky (+https://github.com/bassobr/decky-ally-dsp)"
 
-# Realtek codec subsystem IDs with a speaker tuning in the ASUS Dolby package.
-SUPPORTED_SSIDS = {
-    "10431384": "ROG Xbox Ally X (RC73XA)",
-    "10431394": "ROG Xbox Ally (RC73YA)",
-}
-
 # Dolby profile ids from the DAX3 XML, in display order.
 PROFILES = [
     ("game", "Game"),

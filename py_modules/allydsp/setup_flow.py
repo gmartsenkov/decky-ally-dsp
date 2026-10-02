@@ -3,10 +3,9 @@ from __future__ import annotations
 
 import os
 import time
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional
 
-from . import asus_fetch, convert, dsp_runtime, hardware, paths, settings
-from .constants import SUPPORTED_SSIDS
+from . import asus_fetch, convert, devices, dsp_runtime, hardware, paths, settings
 from .log import logger
 from .util import read_json
 
@@ -31,6 +30,43 @@ def _emit(progress: Progress, step: str, status: str, message: str, sub: float =
     progress(payload)
 
 
+def package_candidates(pkg: Dict[str, Any], pinned: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """The resolved package, then the pinned one when the API pick differs from it.
+    The newest API package may lack the tuning for this codec (seen with the Xbox Ally package)."""
+    out = [pkg]
+    if pkg.get("source") == "asus-api" and pinned and pinned.get("sha256") != pkg.get("sha256"):
+        out.append(pinned)
+    return out
+
+
+def _download_and_extract(progress: Progress, pkg: Dict[str, Any], codec: Dict[str, Any],
+                          check_cancel: Callable[[], None]) -> Dict[str, Any]:
+    os.makedirs(paths.TMP_DIR, exist_ok=True)
+    exe = os.path.join(paths.TMP_DIR, os.path.basename(pkg["url"]))
+    _emit(progress, "download", "running", f"Downloading {pkg.get('title')} {pkg.get('version')} ({pkg.get('size_text') or ''})")
+    size = pkg.get("size") if isinstance(pkg.get("size"), int) else None
+    asus_fetch.download(pkg["url"], exe, pkg.get("sha256"), size,
+                        progress=lambda pct, msg: (_emit(progress, "download", "running", msg, pct), check_cancel()))
+    _emit(progress, "download", "done", "Download verified")
+    check_cancel()
+    _emit(progress, "extract", "running", "Extracting tuning XML")
+    try:
+        prov = asus_fetch.extract_dax3(exe, codec, progress=lambda pct, msg: _emit(progress, "extract", "running", msg, pct),
+                                       package=pkg)
+    except asus_fetch.NoTuning:
+        _unlink(exe)
+        raise
+    _unlink(exe)
+    return prov
+
+
+def _unlink(path: str) -> None:
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
+
+
 def run_setup(progress: Progress, force: bool = False, use_network: bool = True, allow_unsupported: bool = False,
               cancel: Optional[Callable[[], bool]] = None, activate: bool = True) -> Dict[str, Any]:
     cancel = cancel or (lambda: False)
@@ -48,7 +84,7 @@ def run_setup(progress: Progress, force: bool = False, use_network: bool = True,
     if not codec:
         raise RuntimeError("No Realtek HDA codec found in /proc/asound")
     if not codec["supported"] and not allow_unsupported:
-        raise RuntimeError(f"Unsupported device: codec subsystem {codec['ssid']} (supported: {', '.join(SUPPORTED_SSIDS)})")
+        raise RuntimeError(f"Unsupported device: codec subsystem {codec['ssid']} (supported: {', '.join(devices.supported_ssids())})")
     sink = hw.get("sink")
     if not sink:
         raise RuntimeError("No internal analog PipeWire sink found (is PipeWire running?)")
@@ -62,7 +98,14 @@ def run_setup(progress: Progress, force: bool = False, use_network: bool = True,
 
     # 2 resolve
     _emit(progress, "resolve", "running", "Querying ASUS support API")
-    pkg = asus_fetch.resolve_package(use_network=use_network)
+    if codec["supported"]:
+        pkg = asus_fetch.resolve_package(codec["ssid"], use_network=use_network)
+        candidates = package_candidates(pkg, asus_fetch.pinned_package(codec["ssid"]))
+    else:
+        candidates = asus_fetch.all_pinned_packages()
+        if not candidates:
+            raise RuntimeError("No pinned package to try for an unknown device")
+        pkg = candidates[0]
     _emit(progress, "resolve", "done", f"{pkg.get('title')} {pkg.get('version')} ({pkg.get('source')})", package=pkg)
     check_cancel()
 
@@ -75,21 +118,16 @@ def run_setup(progress: Progress, force: bool = False, use_network: bool = True,
         _emit(progress, "download", "skipped", "Package already processed")
         _emit(progress, "extract", "skipped", prov.get("xml_name", ""))
     else:
-        os.makedirs(paths.TMP_DIR, exist_ok=True)
-        exe = os.path.join(paths.TMP_DIR, os.path.basename(pkg["url"]))
-        _emit(progress, "download", "running", f"Downloading {pkg.get('title')} ({pkg.get('size_text') or ''})")
-        size = pkg.get("size") if isinstance(pkg.get("size"), int) else None
-        asus_fetch.download(pkg["url"], exe, pkg.get("sha256"), size,
-                            progress=lambda pct, msg: (_emit(progress, "download", "running", msg, pct), check_cancel()))
-        _emit(progress, "download", "done", "Download verified")
-        check_cancel()
-        _emit(progress, "extract", "running", "Extracting tuning XML")
-        prov = asus_fetch.extract_dax3(exe, codec, progress=lambda pct, msg: _emit(progress, "extract", "running", msg, pct),
-                                       package=pkg)
-        try:
-            os.unlink(exe)
-        except OSError:
-            pass
+        for i, cand in enumerate(candidates):
+            try:
+                prov = _download_and_extract(progress, cand, codec, check_cancel)
+                pkg = cand
+                break
+            except asus_fetch.NoTuning as e:
+                if i == len(candidates) - 1:
+                    raise
+                logger.warning(f"{e}; retrying with {candidates[i + 1].get('version')}")
+                _emit(progress, "extract", "running", f"{e}; trying {candidates[i + 1].get('version')}", 0)
         xml = asus_fetch.current_xml()
         _emit(progress, "extract", "done", prov.get("xml_name", ""))
     check_cancel()

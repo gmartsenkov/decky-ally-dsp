@@ -10,7 +10,7 @@ import subprocess
 import time
 from typing import Any, Callable, Dict, List, Optional
 
-from . import paths
+from . import devices, paths
 from .constants import USER_AGENT
 from .log import logger
 from .util import read_json, run, sha256_file, user_env, write_json
@@ -19,8 +19,28 @@ SIG_7Z = b"7z\xbc\xaf\x27\x1c"
 Progress = Optional[Callable[[float, str], None]]
 
 
+class NoTuning(RuntimeError):
+    """The package has no DAX3 XML for this codec's DEV/SUBSYS."""
+
+
 def load_fallback() -> Dict[str, Any]:
-    return read_json(paths.FALLBACK_SOURCES, {}) or {}
+    return devices.load_registry()
+
+
+def device_source(ssid: str) -> Dict[str, Any]:
+    dev = devices.lookup(ssid)
+    if not dev:
+        raise RuntimeError(f"No package source for codec subsystem {devices.normalize_ssid(ssid)} "
+                           f"(known: {', '.join(devices.supported_ssids())})")
+    return dev
+
+
+def pinned_package(ssid: str) -> Optional[Dict[str, Any]]:
+    pkg = dict(device_source(ssid).get("package") or {})
+    if not pkg.get("url"):
+        return None
+    pkg["source"] = "fallback"
+    return pkg
 
 
 def _curl_json(url: str, timeout: int = 30) -> Optional[Any]:
@@ -73,19 +93,29 @@ def parse_api(data: Any, cdn: str) -> Optional[Dict[str, Any]]:
     return best
 
 
-def resolve_package(use_network: bool = True) -> Dict[str, Any]:
-    fb = load_fallback()
-    if use_network and fb.get("asus_api"):
-        data = _curl_json(fb["asus_api"])
+def all_pinned_packages() -> List[Dict[str, Any]]:
+    """Every distinct pinned package in the registry; for devices without an entry (setup with 'try anyway')."""
+    out: List[Dict[str, Any]] = []
+    for ssid in devices.supported_ssids():
+        pkg = pinned_package(ssid)
+        if pkg and pkg.get("sha256") not in {p.get("sha256") for p in out}:
+            out.append(pkg)
+    return out
+
+
+def resolve_package(ssid: str, use_network: bool = True) -> Dict[str, Any]:
+    """Newest Dolby package from this device's ASUS API query, else its pinned fallback."""
+    dev = device_source(ssid)
+    if use_network and dev.get("asus_api"):
+        data = _curl_json(dev["asus_api"])
         if data is not None:
-            pick = parse_api(data, fb.get("asus_cdn", "https://dlcdnets.asus.com"))
+            pick = parse_api(data, load_fallback()["asus_cdn"])
             if pick:
                 pick["source"] = "asus-api"
                 return pick
-    pkg = dict(fb.get("package", {}))
-    if not pkg.get("url"):
-        raise RuntimeError("No package source available (API unreachable and no fallback pinned)")
-    pkg["source"] = "fallback"
+    pkg = pinned_package(ssid)
+    if not pkg:
+        raise RuntimeError(f"No package source available for {dev.get('name')} (API unreachable and no fallback pinned)")
     return pkg
 
 
@@ -216,7 +246,7 @@ def extract_dax3(exe_path: str, codec: Dict[str, Any], progress: Progress = None
     entries = list_7z(payload)
     sel = select_paths(entries, dev, ssid)
     if not sel["xml"]:
-        raise RuntimeError(f"Package contains no tuning for DEV_{dev}_SUBSYS_{ssid}")
+        raise NoTuning(f"Package contains no tuning for DEV_{dev}_SUBSYS_{ssid}")
     targets = [sel["xml"]] + ([sel["inf"]] if sel["inf"] else [])
     if progress:
         progress(50, "extracting")

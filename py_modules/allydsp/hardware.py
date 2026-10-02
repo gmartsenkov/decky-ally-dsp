@@ -6,8 +6,8 @@ import os
 import re
 from typing import Any, Dict, List, Optional
 
-from . import paths
-from .constants import CALF_SATURATOR_URI, INPUT_NODE, LSP_URIS, SUPPORTED_SSIDS
+from . import devices, paths
+from .constants import CALF_SATURATOR_URI, INPUT_NODE, LSP_URIS
 from .util import run, which
 
 REALTEK = "10ec"
@@ -58,7 +58,8 @@ def codec_info() -> Optional[Dict[str, Any]]:
                 card_id = f.read().strip()
         except OSError:
             card_id = str(card)
-        ssid = parsed["ssid"]
+        ssid = devices.normalize_ssid(parsed["ssid"])
+        dev = devices.lookup(ssid)
         return {
             "card": card,
             "card_id": card_id,
@@ -66,8 +67,8 @@ def codec_info() -> Optional[Dict[str, Any]]:
             "vendor_id": vid,
             "dev": vid[4:],
             "ssid": ssid,
-            "supported": ssid in SUPPORTED_SSIDS,
-            "model": SUPPORTED_SSIDS.get(ssid),
+            "supported": dev is not None,
+            "model": dev.get("name") if dev else None,
         }
     return None
 
