@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- Support the ROG Ally X (2024, RC72LA, codec subsystem 1043:1EB3) with its own
+  ASUS package (Dolby Atmos driver V9.816.706.24).
+- Per-device package registry in `defaults/fallback-sources.json`: display name,
+  ASUS API query and pinned fallback package per lowercase codec subsystem id.
+- Compare codec subsystem ids in lowercase everywhere.
+- If the newest package from the ASUS API has no tuning for the codec, setup
+  downloads the pinned package and tries again.
+- "Try anyway" on an unknown device tries every pinned package.
+- Generic device names in the unit description and the plugin metadata.
+
 ## 0.1.4 (2026-09-20)
 
 - Restart Steam automatically after an in-app update so the new UI loads

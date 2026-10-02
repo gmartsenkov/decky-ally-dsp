@@ -40,12 +40,17 @@ ally-dsp.service: /usr/bin/pipewire -c ~/homebrew/data/Ally DSP/active/chain.con
 
 1. `hardware`: Realtek codec and subsystem id from `/proc/asound`, speaker sink
    from `pw-dump`, tools (`7z`, `curl`), bundled LV2 plugins via `lv2ls`.
-2. `resolve`: ASUS support API (`GetPDDrivers`), newest "Dolby Atmos driver"
-   entry with URL and SHA-256; fallback pinned in `defaults/fallback-sources.json`.
+2. `resolve`: `devices.lookup(ssid)` gives the entry for the detected codec
+   subsystem id (lowercase). Its ASUS support API query (`GetPDDrivers`) returns
+   the driver list. Setup uses the newest "Dolby Atmos driver" entry with URL
+   and SHA-256. If the API is unreachable, setup uses the pinned package of the entry.
 3. `download`: `curl` with resume, progress by file size, SHA-256 check.
 4. `extract`: find the 7z signature in the installer, slice the payload, `7z l`
    then `7z e` for `DEV_<dev>_SUBSYS_<ssid>*.xml` and `dax3_ext_rtk.inf`,
    validate the XML (root, security key, profiles), write `provenance.json`.
+   If the API package has no XML for this codec, steps 3 and 4 run again with
+   the pinned package. With "try anyway" on an unknown device, every pinned
+   package is tried in turn.
 5. `venv`: `/usr/bin/python3 -m venv`, `pip install -r converter-requirements.txt`
    (fallback unpinned), import check. Rebuilt when the system Python changes.
 6. `convert`: for every profile × voicing run
@@ -57,6 +62,35 @@ ally-dsp.service: /usr/bin/pipewire -c ~/homebrew/data/Ally DSP/active/chain.con
    unit, verify the node in `pw-dump`, enable autostart.
 
 Steps 3–4 and 6 are skipped when provenance and preset metadata already match.
+
+## Device registry
+
+`defaults/fallback-sources.json` holds one entry per supported device, keyed by
+the lowercase codec subsystem id:
+
+```json
+{
+  "asus_cdn": "https://dlcdnets.asus.com",
+  "devices": {
+    "10431eb3": {
+      "name": "ROG Ally X (RC72LA)",
+      "asus_api": "https://www.asus.com/support/webapi/ProductV2/GetPDDrivers?...&cpu=RC72LA&osid=52",
+      "package": {"title": "Dolby Atmos driver", "version": "V9.816.706.24", "release_date": "2024/09/13",
+                  "url": "https://dlcdnets.asus.com/pub/ASUS/.../..._V9.816.706.24_16152_3.exe",
+                  "sha256": "…", "size": 8807856}
+    }
+  }
+}
+```
+
+`devices.load_registry` reads the file and normalizes the keys. An entry
+without `asus_api` or `package` inherits the top-level keys of the same name
+(the format before the registry). The file stores only URLs and hashes. The
+tuning itself is never part of the repository (see `THIRD_PARTY_LICENSES.md`).
+
+The RC72LA query needs `cpu=RC72LA`. Without it, the API answers with a
+parameter error. The RC73YA shares the RC73XA query and package, because that
+package contains the tuning for both codecs.
 
 ## Runtime
 

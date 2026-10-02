@@ -1,9 +1,10 @@
 # Ally DSP
 
-Decky Loader plugin that brings the Dolby speaker tuning of the ROG Xbox Ally X
-to SteamOS. On Windows the built-in speakers are shaped by Dolby Atmos; on
-SteamOS they play untreated. Ally DSP downloads ASUS' public Dolby driver package
-onto the device, extracts the tuning for the installed codec, converts it with
+Decky Loader plugin that brings the Dolby speaker tuning of the ASUS ROG Ally
+handhelds (ROG Xbox Ally X, ROG Xbox Ally, ROG Ally X) to SteamOS. On Windows the
+built-in speakers are shaped by Dolby Atmos; on SteamOS they play untreated.
+Ally DSP downloads the public ASUS Dolby driver package for the detected device,
+extracts the tuning for the installed codec, converts it with
 [speaker-tuning-to-easyeffects](https://github.com/antoinecellerier/speaker-tuning-to-easyeffects)
 into a PipeWire filter chain and runs the chain as a WirePlumber smart filter in
 front of the speaker sink. Steam keeps seeing the real speakers, the volume keys
@@ -29,6 +30,12 @@ keep working, headphones pause the chain.
 |---|---|---|
 | ROG Xbox Ally X (RC73XA) | 1043:1384 | developed and tested on SteamOS 3.8.16 |
 | ROG Xbox Ally (RC73YA) | 1043:1394 | tuning is in the same ASUS package, untested |
+| ROG Ally X (2024, RC72LA) | 1043:1EB3 | tested on SteamOS 3.8.28 by a contributor |
+
+Each device has its own entry in `defaults/fallback-sources.json`: the ASUS
+support API query and a pinned package (URL, SHA-256, size). The RC72LA uses an
+older ASUS package (V9.816.706.24) because the Xbox Ally package has no tuning
+for its codec. To add a device, add its lowercase codec subsystem id to that file.
 
 Requirements: SteamOS 3.8 or newer, Decky Loader, internet access during setup
 (10 MB ASUS package plus about 220 MB numpy/scipy for the converter).
